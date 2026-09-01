@@ -137,7 +137,15 @@ export function generateTimetable(
     }
   }
 
-  // 2. Sort lessons: Exams first, then Main, then integrated, then sub. Double lessons first.
+  // 2. Count teacher loads for better sorting
+  const teacherLoad: Record<string, number> = {};
+  for (const l of lessons) {
+    if (l.teacherId && l.teacherId !== 'none') {
+      teacherLoad[l.teacherId] = (teacherLoad[l.teacherId] || 0) + (l.isDouble ? 2 : 1);
+    }
+  }
+
+  // 3. Sort lessons: Exams first, then Main, then integrated, then sub. Busiest teachers first. Double lessons first.
   lessons.sort((a, b) => {
     if (a.isExam && !b.isExam) return -1;
     if (!a.isExam && b.isExam) return 1;
@@ -146,6 +154,11 @@ export function generateTimetable(
     if (typeOrder[a.type as keyof typeof typeOrder] !== typeOrder[b.type as keyof typeof typeOrder]) {
       return typeOrder[a.type as keyof typeof typeOrder] - typeOrder[b.type as keyof typeof typeOrder];
     }
+    
+    const loadA = teacherLoad[a.teacherId] || 0;
+    const loadB = teacherLoad[b.teacherId] || 0;
+    if (loadA !== loadB) return loadB - loadA; // Descending order of load
+
     if (a.isDouble && !b.isDouble) return -1;
     if (!a.isDouble && b.isDouble) return 1;
     return 0;
@@ -228,7 +241,7 @@ export function generateTimetable(
     return null;
   };
 
-  const checkSlotValidity = (lesson: LessonToSchedule, day: number, period: number): { valid: boolean, reason?: string } => {
+  const checkSlotValidity = (lesson: LessonToSchedule, day: number, period: number, relaxConstraints: boolean = false): { valid: boolean, reason?: string } => {
     // Exam synchronization constraint for grade
     const cls = classes.find(c => c.id === lesson.classId);
     if (lesson.isExam && cls) {
@@ -290,12 +303,14 @@ export function generateTimetable(
       const addedCount = lesson.isDouble ? 2 : 1;
       const teacher = teachers.find(t => t.id === lesson.teacherId);
       if (teacher && teacherDailyCount[lesson.teacherId][day] + addedCount > teacher.maxLessonsPerSession) {
-        return { valid: false, reason: 'Vượt định mức tiết/buổi của giáo viên' };
+        if (!relaxConstraints) return { valid: false, reason: 'Vượt định mức tiết/buổi của giáo viên' };
       }
     }
 
     // Subject daily limit
-    if (classSubjectDays[lesson.classId][lesson.subjectId].has(day)) return { valid: false, reason: 'Môn học đã có trong ngày' };
+    if (classSubjectDays[lesson.classId][lesson.subjectId].has(day)) {
+       if (!relaxConstraints) return { valid: false, reason: 'Môn học đã có trong ngày' };
+    }
 
     return { valid: true };
   };
@@ -359,61 +374,100 @@ export function generateTimetable(
     }
   };
 
-  // 3. Greedy placement
-  for (const lesson of lessons) {
+  // 4. Greedy placement
+  for (let i = 0; i < lessons.length; i++) {
+    const lesson = lessons[i];
     let placed = false;
     const failureReasons = new Set<string>();
     
-    let bestSlot: { day: number, period: number } | null = null;
-    let bestScore = Infinity;
+    const tryPlace = (relaxConstraints: boolean) => {
+      let bestSlot: { day: number, period: number } | null = null;
+      let bestScore = Infinity;
+      for (let day = 0; day < config.days; day++) {
+        for (let period = 0; period < totalPeriods; period++) {
+          if (lesson.isDouble && period === config.morningLessons - 1) continue;
+          
+          const result = checkSlotValidity(lesson, day, period, relaxConstraints);
+          if (result.valid) {
+            // Calculate score to prevent gaps and balance load
+            const isMorning = period < config.morningLessons;
+            const startP = isMorning ? 0 : config.morningLessons;
+            const endP = isMorning ? config.morningLessons : totalPeriods;
+            
+            // 1. Gap Penalty: Heavily penalize leaving empty periods before this one
+            let lowestEmpty = startP;
+            while (lowestEmpty < endP && classSchedule[lesson.classId][day]?.[lowestEmpty]) {
+              lowestEmpty++;
+            }
+            let gapPenalty = 0;
+            if (period > lowestEmpty) {
+              gapPenalty = (period - lowestEmpty) * 50000;
+            }
+            
+            // 1.b. Teacher Gap Penalty
+            let teacherLowestEmpty = startP;
+            const tId = lesson.teacherId;
+            if (tId && tId !== 'none' && teacherSchedule[tId]) {
+              while (teacherLowestEmpty < endP && teacherSchedule[tId][day]?.[teacherLowestEmpty]) {
+                teacherLowestEmpty++;
+              }
+              if (period > teacherLowestEmpty) {
+                gapPenalty += (period - teacherLowestEmpty) * 40000;
+              }
+            }
+            
+            // 2. Balance Penalty: Strictly force even distribution
+            let sessionCount = 0;
+            for (let p = startP; p < endP; p++) {
+              if (classSchedule[lesson.classId][day]?.[p]) sessionCount++;
+            }
+            const addedPeriods = lesson.isDouble ? 2 : 1;
+            const futureSessionCount = sessionCount + addedPeriods;
+            const balancePenalty = Math.pow(futureSessionCount, 3) * 200;
+            
+            // 3. Late Period Penalty: Strictly penalize going into the 5th period
+            let latePenalty = 0;
+            if (period >= startP + 4) {
+               latePenalty += 100000;
+            }
+            if (lesson.isDouble && period >= startP + 3) {
+               latePenalty += 100000;
+            }
 
-    for (let day = 0; day < config.days; day++) {
-      for (let period = 0; period < totalPeriods; period++) {
-        if (lesson.isDouble && period === config.morningLessons - 1) continue;
+            // If relaxing constraints, add a penalty so it's only used as a last resort
+            const relaxPenalty = relaxConstraints ? 200000 : 0;
 
-        const result = checkSlotValidity(lesson, day, period);
-        
-        if (result.valid) {
-          // Calculate score to prevent gaps and balance load
-          const isMorning = period < config.morningLessons;
-          const startP = isMorning ? 0 : config.morningLessons;
-          const endP = isMorning ? config.morningLessons : totalPeriods;
-          
-          // 1. Gap Penalty: Heavily penalize leaving empty periods before this one
-          let lowestEmpty = startP;
-          while (lowestEmpty < endP && classSchedule[lesson.classId][day]?.[lowestEmpty]) {
-            lowestEmpty++;
+            const dayPenalty = day * 2;
+            const score = gapPenalty + balancePenalty + latePenalty + relaxPenalty + dayPenalty + Math.random();
+            
+            if (score < bestScore) {
+              bestScore = score;
+              bestSlot = { day, period };
+            }
+          } else if (!relaxConstraints && result.reason) {
+            failureReasons.add(result.reason);
           }
-          let gapPenalty = 0;
-          if (period > lowestEmpty) {
-            gapPenalty = (period - lowestEmpty) * 1000;
-          }
-          
-          // 2. Balance Penalty: Prefer days with fewer lessons in this session
-          let sessionCount = 0;
-          for (let p = startP; p < endP; p++) {
-            if (classSchedule[lesson.classId][day]?.[p]) sessionCount++;
-          }
-          const balancePenalty = sessionCount * 10;
-          
-          // 3. Sequential Penalty: Slight preference for earlier days
-          const dayPenalty = day * 2;
-          
-          const score = gapPenalty + balancePenalty + dayPenalty + Math.random();
-          
-          if (score < bestScore) {
-            bestScore = score;
-            bestSlot = { day, period };
-          }
-        } else if (result.reason) {
-          failureReasons.add(result.reason);
         }
       }
+      if (bestSlot) {
+        placeLesson(lesson, bestSlot.day, bestSlot.period);
+        return true;
+      }
+      return false;
+    };
+
+    placed = tryPlace(false);
+
+    if (!placed && lesson.isDouble) {
+      // Split the double lesson into two single lessons and push them to the end of the queue
+      lessons.push({ ...lesson, isDouble: false });
+      lessons.push({ ...lesson, isDouble: false });
+      continue;
     }
 
-    if (bestSlot) {
-      placeLesson(lesson, bestSlot.day, bestSlot.period);
-      placed = true;
+    if (!placed && !lesson.isDouble) {
+      // Retry with relaxed constraints (e.g., allow same subject twice in a day, or bypass strict limits)
+      placed = tryPlace(true);
     }
 
     if (!placed) {
@@ -431,7 +485,6 @@ export function generateTimetable(
       }
       
       unassigned.push({ ...lesson, reason });
-      if (lesson.isDouble) unassigned.push({...lesson, isDouble: false, reason});
     }
   }
 
@@ -447,7 +500,20 @@ export function generateTimetable(
           const startP = isMorning ? 0 : config.morningLessons;
           const endP = isMorning ? config.morningLessons : totalPeriods;
           
-          const getGaps = () => {
+          const getTeacherScore = (tId: string | null) => {
+             if (!tId || tId === 'none' || !teacherSchedule[tId]) return 0;
+             let first = -1; let last = -1; let count = 0;
+             for (let p = startP; p < endP; p++) {
+               if (teacherSchedule[tId][day][p]) {
+                 if (first === -1) first = p;
+                 last = p;
+                 count++;
+               }
+             }
+             if (first === -1) return 0;
+             return ((last - first + 1) - count) * 40000 + (first - startP) * 10;
+          };
+          const getClassScore = () => {
              let first = -1; let last = -1; let count = 0;
              for (let p = startP; p < endP; p++) {
                if (classSchedule[cls.id][day][p]) {
@@ -457,18 +523,12 @@ export function generateTimetable(
                }
              }
              if (first === -1) return 0;
-             return (last - first + 1) - count;
-          };
-          const getScore = () => {
-             let first = -1;
-             for (let p = startP; p < endP; p++) {
-               if (classSchedule[cls.id][day][p]) { first = p; break; }
-             }
-             if (first === -1) return 0;
-             return getGaps() * 10 + (first - startP);
+             let latePenalty = 0;
+             if (last - startP >= 4) latePenalty += 100000;
+             return ((last - first + 1) - count) * 50000 + (first - startP) * 10 + latePenalty;
           };
           
-          if (getScore() === 0) continue;
+          if (getClassScore() === 0) continue;
           
           for (let p1 = startP; p1 < endP; p1++) {
             for (let p2 = startP; p2 < endP; p2++) {
@@ -499,24 +559,41 @@ export function generateTimetable(
               }
               
               if (canSwap) {
-                const oldScore = getScore();
+                const t1Id = s1 ? s1.teacherId : null;
+                const t2Id = s2 ? s2.teacherId : null;
                 
-                if (s1) { delete teacherSchedule[s1.teacherId][day][p1]; delete classSchedule[cls.id][day][p1]; }
-                if (s2) { delete teacherSchedule[s2.teacherId][day][p2]; delete classSchedule[cls.id][day][p2]; }
+                const getGlobalScore = () => getClassScore() + getTeacherScore(t1Id) + (t1Id !== t2Id ? getTeacherScore(t2Id) : 0);
                 
-                if (s1) { teacherSchedule[s1.teacherId][day][p2] = cls.id; classSchedule[cls.id][day][p2] = s1.subjectId; s1.period = p2; }
-                if (s2) { teacherSchedule[s2.teacherId][day][p1] = cls.id; classSchedule[cls.id][day][p1] = s2.subjectId; s2.period = p1; }
+                const oldScore = getGlobalScore();
                 
-                const newScore = getScore();
+                if (s1 && t1Id && teacherSchedule[t1Id]) { delete teacherSchedule[t1Id][day][p1]; }
+                if (s1) { delete classSchedule[cls.id][day][p1]; }
+                
+                if (s2 && t2Id && teacherSchedule[t2Id]) { delete teacherSchedule[t2Id][day][p2]; }
+                if (s2) { delete classSchedule[cls.id][day][p2]; }
+                
+                if (s1 && t1Id && teacherSchedule[t1Id]) { teacherSchedule[t1Id][day][p2] = cls.id; }
+                if (s1) { classSchedule[cls.id][day][p2] = s1.subjectId; s1.period = p2; }
+                
+                if (s2 && t2Id && teacherSchedule[t2Id]) { teacherSchedule[t2Id][day][p1] = cls.id; }
+                if (s2) { classSchedule[cls.id][day][p1] = s2.subjectId; s2.period = p1; }
+                
+                const newScore = getGlobalScore();
                 if (newScore < oldScore) {
                   madeChanges = true;
                   break;
                 } else {
-                  if (s1) { delete teacherSchedule[s1.teacherId][day][p2]; delete classSchedule[cls.id][day][p2]; }
-                  if (s2) { delete teacherSchedule[s2.teacherId][day][p1]; delete classSchedule[cls.id][day][p1]; }
+                  if (s1 && t1Id && teacherSchedule[t1Id]) { delete teacherSchedule[t1Id][day][p2]; }
+                  if (s1) { delete classSchedule[cls.id][day][p2]; }
                   
-                  if (s1) { teacherSchedule[s1.teacherId][day][p1] = cls.id; classSchedule[cls.id][day][p1] = s1.subjectId; s1.period = p1; }
-                  if (s2) { teacherSchedule[s2.teacherId][day][p2] = cls.id; classSchedule[cls.id][day][p2] = s2.subjectId; s2.period = p2; }
+                  if (s2 && t2Id && teacherSchedule[t2Id]) { delete teacherSchedule[t2Id][day][p1]; }
+                  if (s2) { delete classSchedule[cls.id][day][p1]; }
+                  
+                  if (s1 && t1Id && teacherSchedule[t1Id]) { teacherSchedule[t1Id][day][p1] = cls.id; }
+                  if (s1) { classSchedule[cls.id][day][p1] = s1.subjectId; s1.period = p1; }
+                  
+                  if (s2 && t2Id && teacherSchedule[t2Id]) { teacherSchedule[t2Id][day][p2] = cls.id; }
+                  if (s2) { classSchedule[cls.id][day][p2] = s2.subjectId; s2.period = p2; }
                 }
               }
             }
