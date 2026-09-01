@@ -231,8 +231,11 @@ export default function ResultTab({ timetable, unassigned, classes, subjects, te
                         const sub = slot ? subjects.find(s => s.id === slot.subjectId) : null;
                         const teacher = slot ? teachers.find(t => t.id === slot.teacherId) : null;
                         
+                        const isSchoolOff = config.timeOff?.some(off => off.day === dayIndex && (off.session === 'all' || off.session === (isMorning ? 'morning' : 'afternoon')));
+
                         let cellStyle = "bg-white";
-                        if (slot?.isExam) cellStyle = "bg-amber-50 border-amber-200";
+                        if (isSchoolOff) cellStyle = "bg-stone-100/50";
+                        else if (slot?.isExam) cellStyle = "bg-amber-50 border-amber-200";
                         else if (sub?.type === 'main') cellStyle = "bg-brand-50/30";
 
                         return (
@@ -246,6 +249,8 @@ export default function ResultTab({ timetable, unassigned, classes, subjects, te
                                   {teacher?.name.split(' ').pop()}
                                 </span>
                               </div>
+                            ) : isSchoolOff ? (
+                               <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Nghỉ</span>
                             ) : (
                               <div className="w-1.5 h-1.5 bg-stone-200 rounded-full mx-auto"></div>
                             )}
