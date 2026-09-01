@@ -70,6 +70,9 @@ export function generateTimetable(
       const termConfig = currentTerm === 'I' ? subject.gradeConfigs[grade].term1 : subject.gradeConfigs[grade].term2;
       if (termConfig !== undefined) return termConfig;
     }
+    if (subject.type === 'integrated' || subject.type === 'sub') {
+      return 0;
+    }
     return subject.lessonsPerWeek;
   };
 
