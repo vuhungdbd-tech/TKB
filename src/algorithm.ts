@@ -172,6 +172,12 @@ export function generateTimetable(
     teacherSubjects[t.id] = new Set(t.assignments.map(a => a.subjectId));
   }
 
+  const isSchoolOff = (day: number, period: number): boolean => {
+    if (!config.timeOff) return false;
+    const session = period < config.morningLessons ? 'morning' : 'afternoon';
+    return config.timeOff.some(off => off.day === day && (off.session === 'all' || off.session === session));
+  };
+
   const isTeacherOff = (teacherId: string, day: number, period: number): boolean => {
     const teacher = teachers.find(t => t.id === teacherId);
     if (!teacher || !teacher.timeOff) return false;
@@ -238,6 +244,10 @@ export function generateTimetable(
     // Session check
     if (lesson.session === 'morning' && period >= config.morningLessons) return { valid: false, reason: 'Sai buổi học' };
     if (lesson.session === 'afternoon' && period < config.morningLessons) return { valid: false, reason: 'Sai buổi học' };
+
+    // School off check
+    if (isSchoolOff(day, period)) return { valid: false, reason: 'Trường nghỉ' };
+    if (lesson.isDouble && isSchoolOff(day, period + 1)) return { valid: false, reason: 'Trường nghỉ (Tiết đôi)' };
 
     // Class available?
     if (classSchedule[lesson.classId][day][period]) return { valid: false, reason: 'Lớp bận' };
@@ -366,7 +376,9 @@ export function generateTimetable(
 
     if (!placed) {
       let reason = 'Không tìm thấy tiết trống phù hợp';
-      if (failureReasons.has('Giáo viên xin nghỉ') || failureReasons.has('Giáo viên xin nghỉ (Tiết đôi)')) {
+      if (failureReasons.has('Trường nghỉ') || failureReasons.has('Trường nghỉ (Tiết đôi)')) {
+        reason = 'Trường nghỉ, không đủ thời gian';
+      } else if (failureReasons.has('Giáo viên xin nghỉ') || failureReasons.has('Giáo viên xin nghỉ (Tiết đôi)')) {
         reason = 'Giáo viên xin nghỉ';
       } else if (failureReasons.has('Giáo viên bận ở lớp khác') || failureReasons.has('Giáo viên bận ở lớp khác (Tiết đôi)')) {
         reason = 'Giáo viên bận ở lớp khác';
