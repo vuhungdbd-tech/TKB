@@ -111,6 +111,8 @@ export default function App() {
             if (parsed.subjects) setSubjects(parsed.subjects);
             if (parsed.teachers) setTeachers(parsed.teachers);
             if (parsed.config) setConfig({ ...initialConfig, ...parsed.config });
+            if (parsed.timetable) setTimetable(parsed.timetable);
+            if (parsed.unassigned) setUnassigned(parsed.unassigned);
           }
         }
       } else if (data?.data) {
@@ -119,6 +121,8 @@ export default function App() {
         if (parsed.subjects) setSubjects(parsed.subjects);
         if (parsed.teachers) setTeachers(parsed.teachers);
         if (parsed.config) setConfig({ ...initialConfig, ...parsed.config });
+        if (parsed.timetable) setTimetable(parsed.timetable);
+        if (parsed.unassigned) setUnassigned(parsed.unassigned);
         setSyncStatus('synced');
       }
     } catch (e) {
@@ -138,7 +142,7 @@ export default function App() {
   }, [session, loadData]);
 
   const handleSave = async () => {
-    const dataToSave = { classes, subjects, teachers, config };
+    const dataToSave = { classes, subjects, teachers, config, timetable, unassigned };
     
     // Save to localStorage as backup
     localStorage.setItem('timetableData', JSON.stringify(dataToSave));
