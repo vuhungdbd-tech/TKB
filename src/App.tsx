@@ -31,6 +31,9 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+    }).catch((e) => {
+      console.error('Failed to get session:', e);
+      setIsLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -46,14 +49,18 @@ export default function App() {
     if (!supabase || !session) return;
 
     const fetchLicense = async () => {
-      const { data, error } = await supabase
-        .from('licenses')
-        .select('*')
-        .eq('used_by_email', session.user.email)
-        .single();
-      
-      if (!error && data) {
-        setLicenseInfo(data);
+      try {
+        const { data, error } = await supabase
+          .from('licenses')
+          .select('*')
+          .eq('used_by_email', session.user.email)
+          .single();
+        
+        if (!error && data) {
+          setLicenseInfo(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch license:', e);
       }
     };
 

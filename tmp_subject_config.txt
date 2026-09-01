@@ -1,0 +1,142 @@
+
+function SubjectConfig({ subjects, setSubjects }: { subjects: Subject[], setSubjects: any }) {
+  const handleAddSubject = () => {
+    const newId = `s${Date.now()}`;
+    setSubjects([...subjects, {
+      id: newId,
+      name: 'Môn mới',
+      lessonsPerWeek: 1,
+      type: 'sub',
+      allowDouble: false,
+      session: 'all',
+      hasExam: false
+    }]);
+  };
+
+  const handleDeleteSubject = (id: string) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa môn học này?')) {
+      setSubjects(subjects.filter((s: Subject) => s.id !== id));
+    }
+  };
+
+  const updateSubject = (idx: number, field: keyof Subject, value: any) => {
+    const newSubs = [...subjects];
+    (newSubs[idx] as any)[field] = value;
+    setSubjects(newSubs);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-text-main">Danh mục môn học</h2>
+          <p className="text-base text-text-muted mt-1.5">Quản lý danh sách môn học và định mức tiết dạy</p>
+        </div>
+        <button onClick={handleAddSubject} className="btn-primary flex items-center gap-2">
+          <Plus className="w-4 h-4" /> Thêm môn học
+        </button>
+      </div>
+
+      <div className="overflow-hidden border border-slate-200 rounded-xl">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Tên môn</th>
+              <th>Số tiết/tuần</th>
+              <th>Loại môn</th>
+              <th>Tiết đôi</th>
+              <th>Buổi học</th>
+              <th>Kiểm tra</th>
+              <th>Số tiết KT</th>
+              <th className="text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subjects.map((sub, idx) => (
+              <tr key={sub.id}>
+                <td>
+                  <input 
+                    value={sub.name || ''} 
+                    onChange={(e) => updateSubject(idx, 'name', e.target.value)} 
+                    className="bg-transparent font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 rounded px-1 -ml-1 w-full" 
+                  />
+                </td>
+                <td>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={sub.lessonsPerWeek || 0} 
+                    onChange={(e) => updateSubject(idx, 'lessonsPerWeek', parseInt(e.target.value) || 1)} 
+                    className="w-16 bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center font-mono" 
+                  />
+                </td>
+                <td>
+                  <select 
+                    value={sub.type || 'sub'} 
+                    onChange={(e) => updateSubject(idx, 'type', e.target.value)} 
+                    className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-semibold"
+                  >
+                    <option value="main">Môn chính</option>
+                    <option value="integrated">Tích hợp</option>
+                    <option value="sub">Môn phụ</option>
+                  </select>
+                </td>
+                <td>
+                  <input 
+                    type="checkbox" 
+                    checked={sub.allowDouble || false} 
+                    onChange={(e) => updateSubject(idx, 'allowDouble', e.target.checked)} 
+                    className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500" 
+                  />
+                </td>
+                <td>
+                  <select 
+                    value={sub.session || 'all'} 
+                    onChange={(e) => updateSubject(idx, 'session', e.target.value)} 
+                    className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs"
+                  >
+                    <option value="all">Cả ngày</option>
+                    <option value="morning">Sáng</option>
+                    <option value="afternoon">Chiều</option>
+                  </select>
+                </td>
+                <td>
+                  <input 
+                    type="checkbox" 
+                    checked={sub.hasExam || false} 
+                    onChange={(e) => {
+                      const newSubs = [...subjects];
+                      newSubs[idx].hasExam = e.target.checked;
+                      if (e.target.checked) newSubs[idx].examDuration = newSubs[idx].examDuration || 1;
+                      setSubjects(newSubs);
+                    }} 
+                    className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500" 
+                  />
+                </td>
+                <td>
+                  <select 
+                    value={sub.examDuration || 1} 
+                    disabled={!sub.hasExam}
+                    onChange={(e) => updateSubject(idx, 'examDuration', parseInt(e.target.value))} 
+                    className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs disabled:opacity-30"
+                  >
+                    <option value={1}>1 tiết</option>
+                    <option value={2}>2 tiết</option>
+                  </select>
+                </td>
+                <td className="text-right">
+                  <button onClick={() => handleDeleteSubject(sub.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TeacherConfig({ teachers, setTeachers, subjects, classes }: { teachers: Teacher[], setTeachers: any, subjects: Subject[], classes: Class[] }) {
+  const handleAddTeacher = () => {

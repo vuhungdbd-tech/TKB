@@ -11,6 +11,7 @@ export interface Subject {
   id: string;
   name: string;
   lessonsPerWeek: number;
+  gradeConfigs?: Record<number, { term1?: number, term2?: number }>;
   type: SubjectType;
   allowDouble: boolean;
   session: SessionType;
@@ -31,6 +32,7 @@ export interface Teacher {
   maxLessonsPerWeek: number;
   maxLessonsPerSession: number;
   maxConsecutive: number;
+  timeOff?: { day: number, session: SessionType }[];
 }
 
 export interface ExamConfig {
@@ -51,6 +53,7 @@ export interface Config {
   appName: string;
   appSubtitle: string;
   schoolYear: string;
+  currentTerm?: 'I' | 'II';
   executionDate: string;
   exams: ExamConfig[];
   currentExamTerm?: 'none' | 'midTerm1' | 'finalTerm1' | 'midTerm2' | 'finalTerm2';

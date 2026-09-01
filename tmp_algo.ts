@@ -172,13 +172,6 @@ export function generateTimetable(
     teacherSubjects[t.id] = new Set(t.assignments.map(a => a.subjectId));
   }
 
-  const isTeacherOff = (teacherId: string, day: number, period: number): boolean => {
-    const teacher = teachers.find(t => t.id === teacherId);
-    if (!teacher || !teacher.timeOff) return false;
-    const session = period < config.morningLessons ? 'morning' : 'afternoon';
-    return teacher.timeOff.some(off => off.day === day && (off.session === 'all' || off.session === session));
-  };
-
   const findExamTeacher = (lesson: LessonToSchedule, day: number, period: number, excludeTeacherId?: string): string | null => {
     const sub = subjects.find(s => s.id === lesson.subjectId);
     if (!sub || !lesson.isExam) return lesson.teacherId;
@@ -206,7 +199,6 @@ export function generateTimetable(
     for (const t of teachers) {
       if (t.id === excludeTeacherId) continue;
       if (!isTeacherQualified(t.id)) continue;
-      if (isTeacherOff(t.id, day, period)) continue;
       if (teacherSchedule[t.id][day][period]) continue;
       if (teacherDailyCount[t.id][day] + 1 > t.maxLessonsPerSession) continue;
       return t.id;
@@ -256,12 +248,6 @@ export function generateTimetable(
       }
     } else {
       // CRITICAL: Prevent teacher from being in two classes at once
-      if (isTeacherOff(lesson.teacherId, day, period)) {
-        return { valid: false, reason: 'Giáo viên xin nghỉ' };
-      }
-      if (lesson.isDouble && isTeacherOff(lesson.teacherId, day, period + 1)) {
-        return { valid: false, reason: 'Giáo viên xin nghỉ (Tiết đôi)' };
-      }
       if (teacherSchedule[lesson.teacherId][day][period]) {
         return { valid: false, reason: 'Giáo viên bận ở lớp khác' };
       }
@@ -366,9 +352,7 @@ export function generateTimetable(
 
     if (!placed) {
       let reason = 'Không tìm thấy tiết trống phù hợp';
-      if (failureReasons.has('Giáo viên xin nghỉ') || failureReasons.has('Giáo viên xin nghỉ (Tiết đôi)')) {
-        reason = 'Giáo viên xin nghỉ';
-      } else if (failureReasons.has('Giáo viên bận ở lớp khác') || failureReasons.has('Giáo viên bận ở lớp khác (Tiết đôi)')) {
+      if (failureReasons.has('Giáo viên bận ở lớp khác') || failureReasons.has('Giáo viên bận ở lớp khác (Tiết đôi)')) {
         reason = 'Giáo viên bận ở lớp khác';
       } else if (failureReasons.has('Vượt định mức tiết/buổi của giáo viên')) {
         reason = 'Vượt định mức tiết/buổi của giáo viên';

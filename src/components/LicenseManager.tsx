@@ -13,13 +13,18 @@ export default function LicenseManager() {
   const fetchKeys = async () => {
     if (!supabase) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('licenses')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (!error && data) setKeys(data);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('licenses')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) setKeys(data);
+    } catch (e) {
+      console.error('Failed to fetch keys:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,14 +58,18 @@ export default function LicenseManager() {
 
   const fetchSettings = async () => {
     if (!supabase) return;
-    const { data, error } = await supabase
-      .from('global_settings')
-      .select('*')
-      .eq('id', 'login_bg')
-      .single();
-    
-    if (!error && data) {
-      setLoginBg(data.value?.url || '');
+    try {
+      const { data, error } = await supabase
+        .from('global_settings')
+        .select('*')
+        .eq('id', 'login_bg')
+        .single();
+      
+      if (!error && data) {
+        setLoginBg(data.value?.url || '');
+      }
+    } catch (e) {
+      console.error('Failed to fetch settings:', e);
     }
   };
 

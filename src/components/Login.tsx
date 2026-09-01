@@ -21,14 +21,18 @@ export default function Login({ onLogin }: LoginProps) {
 
   const fetchBg = async () => {
     if (!supabase) return;
-    const { data, error } = await supabase
-      .from('global_settings')
-      .select('*')
-      .eq('id', 'login_bg')
-      .single();
-    
-    if (!error && data?.value?.url) {
-      setBgUrl(data.value.url);
+    try {
+      const { data, error } = await supabase
+        .from('global_settings')
+        .select('*')
+        .eq('id', 'login_bg')
+        .single();
+      
+      if (!error && data?.value?.url) {
+        setBgUrl(data.value.url);
+      }
+    } catch (e) {
+      console.error('Failed to fetch background:', e);
     }
   };
 

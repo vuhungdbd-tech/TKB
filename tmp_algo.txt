@@ -1,0 +1,35 @@
+  };
+
+  // 1. Generate all required lessons
+  let lessons: LessonToSchedule[] = [];
+  
+  for (const cls of classes) {
+    const examSubjects = getExamSubjectsForGrade(cls.grade);
+    
+    for (const sub of subjects) {
+      // Find teacher for this class and subject
+      const teacher = teachers.find(t => 
+        t.assignments.some(a => a.subjectId === sub.id && a.classIds.includes(cls.id))
+      );
+      if (!teacher) {
+        // No teacher found, add to unassigned
+        for (let i = 0; i < sub.lessonsPerWeek; i++) {
+          unassigned.push({
+            classId: cls.id,
+            subjectId: sub.id,
+            teacherId: 'none',
+            type: sub.type,
+            isDouble: false,
+            session: sub.session
+          });
+        }
+        continue;
+      }
+
+      let remaining = sub.lessonsPerWeek;
+      let isFirstLesson = true;
+      const isSubjectExam = examSubjects.some(es => es.id === sub.id);
+
+      // If double allowed, try to group them
+      while (remaining > 0) {
+        let isExam = false;
