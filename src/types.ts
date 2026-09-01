@@ -59,6 +59,7 @@ export interface Config {
   currentExamTerm?: 'none' | 'midTerm1' | 'finalTerm1' | 'midTerm2' | 'finalTerm2';
   gradeCounts?: Record<number, number>;
   gradePrefixes?: Record<number, string>;
+  timeOff?: { day: number, session: SessionType }[];
 }
 
 export interface TimetableSlot {
