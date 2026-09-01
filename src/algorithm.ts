@@ -358,23 +358,58 @@ export function generateTimetable(
   // 3. Greedy placement
   for (const lesson of lessons) {
     let placed = false;
-    const days = Array.from({ length: config.days }, (_, i) => i).sort(() => Math.random() - 0.5);
     const failureReasons = new Set<string>();
     
-    for (const day of days) {
-      if (placed) break;
+    let bestSlot: { day: number, period: number } | null = null;
+    let bestScore = Infinity;
+
+    for (let day = 0; day < config.days; day++) {
       for (let period = 0; period < totalPeriods; period++) {
         if (lesson.isDouble && period === config.morningLessons - 1) continue;
 
         const result = checkSlotValidity(lesson, day, period);
+        
         if (result.valid) {
-          placeLesson(lesson, day, period);
-          placed = true;
-          break;
+          // Calculate score to prevent gaps and balance load
+          const isMorning = period < config.morningLessons;
+          const startP = isMorning ? 0 : config.morningLessons;
+          const endP = isMorning ? config.morningLessons : totalPeriods;
+          
+          // 1. Gap Penalty: Heavily penalize leaving empty periods before this one
+          let lowestEmpty = startP;
+          while (lowestEmpty < endP && classSchedule[lesson.classId][day]?.[lowestEmpty]) {
+            lowestEmpty++;
+          }
+          let gapPenalty = 0;
+          if (period > lowestEmpty) {
+            gapPenalty = (period - lowestEmpty) * 1000;
+          }
+          
+          // 2. Balance Penalty: Prefer days with fewer lessons in this session
+          let sessionCount = 0;
+          for (let p = startP; p < endP; p++) {
+            if (classSchedule[lesson.classId][day]?.[p]) sessionCount++;
+          }
+          const balancePenalty = sessionCount * 10;
+          
+          // 3. Sequential Penalty: Slight preference for earlier days
+          const dayPenalty = day * 2;
+          
+          const score = gapPenalty + balancePenalty + dayPenalty + Math.random();
+          
+          if (score < bestScore) {
+            bestScore = score;
+            bestSlot = { day, period };
+          }
         } else if (result.reason) {
           failureReasons.add(result.reason);
         }
       }
+    }
+
+    if (bestSlot) {
+      placeLesson(lesson, bestSlot.day, bestSlot.period);
+      placed = true;
     }
 
     if (!placed) {
@@ -393,6 +428,98 @@ export function generateTimetable(
       
       unassigned.push({ ...lesson, reason });
       if (lesson.isDouble) unassigned.push({...lesson, isDouble: false, reason});
+    }
+  }
+
+  // 4. Compaction (Gap closing)
+  let madeChanges = true;
+  let iterations = 0;
+  while (madeChanges && iterations < 20) {
+    madeChanges = false;
+    iterations++;
+    for (const cls of classes) {
+      for (let day = 0; day < config.days; day++) {
+        for (const isMorning of [true, false]) {
+          const startP = isMorning ? 0 : config.morningLessons;
+          const endP = isMorning ? config.morningLessons : totalPeriods;
+          
+          const getGaps = () => {
+             let first = -1; let last = -1; let count = 0;
+             for (let p = startP; p < endP; p++) {
+               if (classSchedule[cls.id][day][p]) {
+                 if (first === -1) first = p;
+                 last = p;
+                 count++;
+               }
+             }
+             if (first === -1) return 0;
+             return (last - first + 1) - count;
+          };
+          const getScore = () => {
+             let first = -1;
+             for (let p = startP; p < endP; p++) {
+               if (classSchedule[cls.id][day][p]) { first = p; break; }
+             }
+             if (first === -1) return 0;
+             return getGaps() * 10 + (first - startP);
+          };
+          
+          if (getScore() === 0) continue;
+          
+          for (let p1 = startP; p1 < endP; p1++) {
+            for (let p2 = startP; p2 < endP; p2++) {
+              if (p1 === p2) continue;
+              
+              const sub1 = classSchedule[cls.id][day][p1];
+              const sub2 = classSchedule[cls.id][day][p2];
+              if (!sub1 && !sub2) continue;
+              
+              const s1 = slots.find(s => s.classId === cls.id && s.day === day && s.period === p1);
+              const s2 = slots.find(s => s.classId === cls.id && s.day === day && s.period === p2);
+              if ((s1 && s1.isExam) || (s2 && s2.isExam)) continue;
+              
+              const isDouble1 = sub1 && ((p1 + 1 < endP && classSchedule[cls.id][day][p1+1] === sub1) || (p1 - 1 >= startP && classSchedule[cls.id][day][p1-1] === sub1));
+              const isDouble2 = sub2 && ((p2 + 1 < endP && classSchedule[cls.id][day][p2+1] === sub2) || (p2 - 1 >= startP && classSchedule[cls.id][day][p2-1] === sub2));
+              if (isDouble1 || isDouble2) continue;
+              
+              let canSwap = true;
+              if (s1) {
+                if (isTeacherOff(s1.teacherId, day, p2)) canSwap = false;
+                if (teacherSchedule[s1.teacherId][day][p2] && teacherSchedule[s1.teacherId][day][p2] !== cls.id) canSwap = false;
+                if (isSchoolOff(day, p2)) canSwap = false;
+              }
+              if (s2) {
+                if (isTeacherOff(s2.teacherId, day, p1)) canSwap = false;
+                if (teacherSchedule[s2.teacherId][day][p1] && teacherSchedule[s2.teacherId][day][p1] !== cls.id) canSwap = false;
+                if (isSchoolOff(day, p1)) canSwap = false;
+              }
+              
+              if (canSwap) {
+                const oldScore = getScore();
+                
+                if (s1) { delete teacherSchedule[s1.teacherId][day][p1]; delete classSchedule[cls.id][day][p1]; }
+                if (s2) { delete teacherSchedule[s2.teacherId][day][p2]; delete classSchedule[cls.id][day][p2]; }
+                
+                if (s1) { teacherSchedule[s1.teacherId][day][p2] = cls.id; classSchedule[cls.id][day][p2] = s1.subjectId; s1.period = p2; }
+                if (s2) { teacherSchedule[s2.teacherId][day][p1] = cls.id; classSchedule[cls.id][day][p1] = s2.subjectId; s2.period = p1; }
+                
+                const newScore = getScore();
+                if (newScore < oldScore) {
+                  madeChanges = true;
+                  break;
+                } else {
+                  if (s1) { delete teacherSchedule[s1.teacherId][day][p2]; delete classSchedule[cls.id][day][p2]; }
+                  if (s2) { delete teacherSchedule[s2.teacherId][day][p1]; delete classSchedule[cls.id][day][p1]; }
+                  
+                  if (s1) { teacherSchedule[s1.teacherId][day][p1] = cls.id; classSchedule[cls.id][day][p1] = s1.subjectId; s1.period = p1; }
+                  if (s2) { teacherSchedule[s2.teacherId][day][p2] = cls.id; classSchedule[cls.id][day][p2] = s2.subjectId; s2.period = p2; }
+                }
+              }
+            }
+            if (madeChanges) break;
+          }
+        }
+      }
     }
   }
 
