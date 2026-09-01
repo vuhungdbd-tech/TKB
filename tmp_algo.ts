@@ -70,6 +70,9 @@ export function generateTimetable(
       const termConfig = currentTerm === 'I' ? subject.gradeConfigs[grade].term1 : subject.gradeConfigs[grade].term2;
       if (termConfig !== undefined) return termConfig;
     }
+    if (subject.type === 'integrated' || subject.type === 'sub') {
+      return 0;
+    }
     return subject.lessonsPerWeek;
   };
 
@@ -172,6 +175,19 @@ export function generateTimetable(
     teacherSubjects[t.id] = new Set(t.assignments.map(a => a.subjectId));
   }
 
+  const isSchoolOff = (day: number, period: number): boolean => {
+    if (!config.timeOff) return false;
+    const session = period < config.morningLessons ? 'morning' : 'afternoon';
+    return config.timeOff.some(off => off.day === day && (off.session === 'all' || off.session === session));
+  };
+
+  const isTeacherOff = (teacherId: string, day: number, period: number): boolean => {
+    const teacher = teachers.find(t => t.id === teacherId);
+    if (!teacher || !teacher.timeOff) return false;
+    const session = period < config.morningLessons ? 'morning' : 'afternoon';
+    return teacher.timeOff.some(off => off.day === day && (off.session === 'all' || off.session === session));
+  };
+
   const findExamTeacher = (lesson: LessonToSchedule, day: number, period: number, excludeTeacherId?: string): string | null => {
     const sub = subjects.find(s => s.id === lesson.subjectId);
     if (!sub || !lesson.isExam) return lesson.teacherId;
@@ -199,6 +215,7 @@ export function generateTimetable(
     for (const t of teachers) {
       if (t.id === excludeTeacherId) continue;
       if (!isTeacherQualified(t.id)) continue;
+      if (isTeacherOff(t.id, day, period)) continue;
       if (teacherSchedule[t.id][day][period]) continue;
       if (teacherDailyCount[t.id][day] + 1 > t.maxLessonsPerSession) continue;
       return t.id;
@@ -231,6 +248,10 @@ export function generateTimetable(
     if (lesson.session === 'morning' && period >= config.morningLessons) return { valid: false, reason: 'Sai buổi học' };
     if (lesson.session === 'afternoon' && period < config.morningLessons) return { valid: false, reason: 'Sai buổi học' };
 
+    // School off check
+    if (isSchoolOff(day, period)) return { valid: false, reason: 'Trường nghỉ' };
+    if (lesson.isDouble && isSchoolOff(day, period + 1)) return { valid: false, reason: 'Trường nghỉ (Tiết đôi)' };
+
     // Class available?
     if (classSchedule[lesson.classId][day][period]) return { valid: false, reason: 'Lớp bận' };
     if (lesson.isDouble && (period + 1 >= totalPeriods || classSchedule[lesson.classId][day][period + 1])) return { valid: false, reason: 'Không đủ tiết đôi cho lớp' };
@@ -248,6 +269,12 @@ export function generateTimetable(
       }
     } else {
       // CRITICAL: Prevent teacher from being in two classes at once
+      if (isTeacherOff(lesson.teacherId, day, period)) {
+        return { valid: false, reason: 'Giáo viên xin nghỉ' };
+      }
+      if (lesson.isDouble && isTeacherOff(lesson.teacherId, day, period + 1)) {
+        return { valid: false, reason: 'Giáo viên xin nghỉ (Tiết đôi)' };
+      }
       if (teacherSchedule[lesson.teacherId][day][period]) {
         return { valid: false, reason: 'Giáo viên bận ở lớp khác' };
       }
@@ -331,28 +358,67 @@ export function generateTimetable(
   // 3. Greedy placement
   for (const lesson of lessons) {
     let placed = false;
-    const days = Array.from({ length: config.days }, (_, i) => i).sort(() => Math.random() - 0.5);
     const failureReasons = new Set<string>();
     
-    for (const day of days) {
-      if (placed) break;
+    let bestSlot: { day: number, period: number } | null = null;
+    let bestScore = Infinity;
+
+    for (let day = 0; day < config.days; day++) {
       for (let period = 0; period < totalPeriods; period++) {
         if (lesson.isDouble && period === config.morningLessons - 1) continue;
 
         const result = checkSlotValidity(lesson, day, period);
+        
         if (result.valid) {
-          placeLesson(lesson, day, period);
-          placed = true;
-          break;
+          // Calculate score to prevent gaps and balance load
+          const isMorning = period < config.morningLessons;
+          const startP = isMorning ? 0 : config.morningLessons;
+          const endP = isMorning ? config.morningLessons : totalPeriods;
+          
+          // 1. Gap Penalty: Heavily penalize leaving empty periods before this one
+          let lowestEmpty = startP;
+          while (lowestEmpty < endP && classSchedule[lesson.classId][day]?.[lowestEmpty]) {
+            lowestEmpty++;
+          }
+          let gapPenalty = 0;
+          if (period > lowestEmpty) {
+            gapPenalty = (period - lowestEmpty) * 1000;
+          }
+          
+          // 2. Balance Penalty: Prefer days with fewer lessons in this session
+          let sessionCount = 0;
+          for (let p = startP; p < endP; p++) {
+            if (classSchedule[lesson.classId][day]?.[p]) sessionCount++;
+          }
+          const balancePenalty = sessionCount * 10;
+          
+          // 3. Sequential Penalty: Slight preference for earlier days
+          const dayPenalty = day * 2;
+          
+          const score = gapPenalty + balancePenalty + dayPenalty + Math.random();
+          
+          if (score < bestScore) {
+            bestScore = score;
+            bestSlot = { day, period };
+          }
         } else if (result.reason) {
           failureReasons.add(result.reason);
         }
       }
     }
 
+    if (bestSlot) {
+      placeLesson(lesson, bestSlot.day, bestSlot.period);
+      placed = true;
+    }
+
     if (!placed) {
       let reason = 'Không tìm thấy tiết trống phù hợp';
-      if (failureReasons.has('Giáo viên bận ở lớp khác') || failureReasons.has('Giáo viên bận ở lớp khác (Tiết đôi)')) {
+      if (failureReasons.has('Trường nghỉ') || failureReasons.has('Trường nghỉ (Tiết đôi)')) {
+        reason = 'Trường nghỉ, không đủ thời gian';
+      } else if (failureReasons.has('Giáo viên xin nghỉ') || failureReasons.has('Giáo viên xin nghỉ (Tiết đôi)')) {
+        reason = 'Giáo viên xin nghỉ';
+      } else if (failureReasons.has('Giáo viên bận ở lớp khác') || failureReasons.has('Giáo viên bận ở lớp khác (Tiết đôi)')) {
         reason = 'Giáo viên bận ở lớp khác';
       } else if (failureReasons.has('Vượt định mức tiết/buổi của giáo viên')) {
         reason = 'Vượt định mức tiết/buổi của giáo viên';

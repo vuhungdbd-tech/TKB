@@ -108,7 +108,7 @@ function SubjectConfig({ subjects, setSubjects }: { subjects: Subject[], setSubj
     setSubjects(newSubs);
   };
 
-  const updateGradeConfig = (subIdx: number, grade: number, term: 'term1' | 'term2', value: string) => {
+  const updateGradeConfig = (subIdx: number, grade: number, term: 'term1' | 'term2' | 'customWeek', value: string) => {
     const newSubs = [...subjects];
     const val = value === '' ? undefined : parseInt(value);
     
@@ -274,6 +274,17 @@ function SubjectConfig({ subjects, setSubjects }: { subjects: Subject[], setSubj
                                   value={sub.gradeConfigs?.[grade]?.term2 ?? ''}
                                   onChange={(e) => updateGradeConfig(idx, grade, 'term2', e.target.value)}
                                   className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100">
+                                <span className="text-[10px] font-medium text-emerald-600 w-16">Tuần bổ sung (Ghi đè)</span>
+                                <input 
+                                  type="number"
+                                  min="0"
+                                  placeholder="Không"
+                                  value={sub.gradeConfigs?.[grade]?.customWeek ?? ''}
+                                  onChange={(e) => updateGradeConfig(idx, grade, 'customWeek', e.target.value)}
+                                  className="w-full bg-emerald-50/50 border border-emerald-200 rounded px-2 py-1 text-sm text-emerald-700 placeholder-emerald-300 focus:ring-emerald-500 focus:border-emerald-500"
                                 />
                               </div>
                             </div>

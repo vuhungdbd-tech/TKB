@@ -11,7 +11,7 @@ export interface Subject {
   id: string;
   name: string;
   lessonsPerWeek: number;
-  gradeConfigs?: Record<number, { term1?: number, term2?: number }>;
+  gradeConfigs?: Record<number, { term1?: number, term2?: number, customWeek?: number }>;
   type: SubjectType;
   allowDouble: boolean;
   session: SessionType;

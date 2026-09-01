@@ -67,7 +67,11 @@ export function generateTimetable(
 
   const getSubjectLessons = (subject: Subject, grade: number): number => {
     if (subject.gradeConfigs && subject.gradeConfigs[grade]) {
-      const termConfig = currentTerm === 'I' ? subject.gradeConfigs[grade].term1 : subject.gradeConfigs[grade].term2;
+      const gConf = subject.gradeConfigs[grade];
+      if (gConf.customWeek !== undefined && gConf.customWeek !== null && gConf.customWeek >= 0) {
+        return gConf.customWeek;
+      }
+      const termConfig = currentTerm === 'I' ? gConf.term1 : gConf.term2;
       if (termConfig !== undefined) return termConfig;
     }
     if (subject.type === 'integrated' || subject.type === 'sub') {

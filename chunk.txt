@@ -1,0 +1,22 @@
+  for (const lesson of lessons) {
+    let placed = false;
+    const days = Array.from({ length: config.days }, (_, i) => i).sort(() => Math.random() - 0.5);
+    const failureReasons = new Set<string>();
+    
+    for (const day of days) {
+      if (placed) break;
+      for (let period = 0; period < totalPeriods; period++) {
+        if (lesson.isDouble && period === config.morningLessons - 1) continue;
+
+        const result = checkSlotValidity(lesson, day, period);
+        if (result.valid) {
+          placeLesson(lesson, day, period);
+          placed = true;
+          break;
+        } else if (result.reason) {
+          failureReasons.add(result.reason);
+        }
+      }
+    }
+
+    if (!placed) {
