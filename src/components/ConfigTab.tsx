@@ -416,8 +416,33 @@ function TeacherConfig({ teachers, setTeachers, subjects, classes }: { teachers:
                         <select 
                           value={assignment.subjectId || ''}
                           onChange={(e) => {
+                            const newSubjectId = e.target.value;
+                            const currentClassIds = assignment.classIds;
+                            let hasConflict = false;
+                            let conflictMsg = "";
+                            for (const otherT of teachers) {
+                              if (otherT.id !== t.id) {
+                                for (const otherA of otherT.assignments) {
+                                  if (otherA.subjectId === newSubjectId) {
+                                    const conflictingClass = currentClassIds.find(cid => otherA.classIds.includes(cid));
+                                    if (conflictingClass) {
+                                      hasConflict = true;
+                                      const clsName = classes.find(c => c.id === conflictingClass)?.name;
+                                      const subName = subjects.find(s => s.id === newSubjectId)?.name;
+                                      conflictMsg = `Lớp ${clsName} đã được phân công cho giáo viên ${otherT.name} dạy môn ${subName}. Không thể đổi sang môn này vì sẽ gây trùng lặp!`;
+                                      break;
+                                    }
+                                  }
+                                }
+                              }
+                              if (hasConflict) break;
+                            }
+                            if (hasConflict) {
+                              alert(conflictMsg);
+                              return;
+                            }
                             const newT = [...teachers];
-                            newT[idx].assignments[aIdx].subjectId = e.target.value;
+                            newT[idx].assignments[aIdx].subjectId = newSubjectId;
                             setTeachers(newT);
                           }}
                           className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-brand-500/20 outline-none"
@@ -435,13 +460,34 @@ function TeacherConfig({ teachers, setTeachers, subjects, classes }: { teachers:
                               <button
                                 key={c.id}
                                 onClick={() => {
-                                  const newT = [...teachers];
                                   if (isSelected) {
+                                    const newT = [...teachers];
                                     newT[idx].assignments[aIdx].classIds = newT[idx].assignments[aIdx].classIds.filter(id => id !== c.id);
+                                    setTeachers(newT);
                                   } else {
+                                    let hasConflict = false;
+                                    let conflictMsg = "";
+                                    for (const otherT of teachers) {
+                                      if (otherT.id !== t.id) {
+                                        for (const otherA of otherT.assignments) {
+                                          if (otherA.subjectId === assignment.subjectId && otherA.classIds.includes(c.id)) {
+                                            hasConflict = true;
+                                            const subName = subjects.find(s => s.id === assignment.subjectId)?.name;
+                                            conflictMsg = `Lớp ${c.name} đã được phân công cho giáo viên ${otherT.name} dạy môn ${subName}. Không thể phân công 2 giáo viên cùng dạy 1 lớp cho 1 môn!`;
+                                            break;
+                                          }
+                                        }
+                                      }
+                                      if (hasConflict) break;
+                                    }
+                                    if (hasConflict) {
+                                      alert(conflictMsg);
+                                      return;
+                                    }
+                                    const newT = [...teachers];
                                     newT[idx].assignments[aIdx].classIds.push(c.id);
+                                    setTeachers(newT);
                                   }
-                                  setTeachers(newT);
                                 }}
                                 className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all border ${
                                   isSelected 
