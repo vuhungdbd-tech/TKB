@@ -18,8 +18,8 @@ export default function App() {
   const [teachers, setTeachers] = useState<Teacher[]>(initialTeachers);
   const [config, setConfig] = useState<Config>(initialConfig);
   
-  const [timetable, setTimetable] = useState<TimetableSlot[]>([]);
-  const [unassigned, setUnassigned] = useState<LessonToSchedule[]>([]);
+  const [currentWeek, setCurrentWeek] = useState<number>(1);
+  const [weeklyTimetables, setWeeklyTimetables] = useState<Record<number, { timetable: TimetableSlot[], unassigned: any[] }>>({});
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'offline'>('offline');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -81,6 +81,12 @@ export default function App() {
           if (parsed.subjects) setSubjects(parsed.subjects);
           if (parsed.teachers) setTeachers(parsed.teachers);
           if (parsed.config) setConfig({ ...initialConfig, ...parsed.config });
+          if (parsed.weeklyTimetables) {
+            setWeeklyTimetables(parsed.weeklyTimetables);
+          } else if (parsed.timetable) {
+            setWeeklyTimetables({ 1: { timetable: parsed.timetable, unassigned: parsed.unassigned || [] } });
+          }
+          if (parsed.currentWeek) setCurrentWeek(parsed.currentWeek);
         } catch (e) {
           console.error('Failed to parse saved data', e);
         }
@@ -111,8 +117,12 @@ export default function App() {
             if (parsed.subjects) setSubjects(parsed.subjects);
             if (parsed.teachers) setTeachers(parsed.teachers);
             if (parsed.config) setConfig({ ...initialConfig, ...parsed.config });
-            if (parsed.timetable) setTimetable(parsed.timetable);
-            if (parsed.unassigned) setUnassigned(parsed.unassigned);
+            if (parsed.weeklyTimetables) {
+              setWeeklyTimetables(parsed.weeklyTimetables);
+            } else if (parsed.timetable) {
+              setWeeklyTimetables({ 1: { timetable: parsed.timetable, unassigned: parsed.unassigned || [] } });
+            }
+            if (parsed.currentWeek) setCurrentWeek(parsed.currentWeek);
           }
         }
       } else if (data?.data) {
@@ -121,8 +131,12 @@ export default function App() {
         if (parsed.subjects) setSubjects(parsed.subjects);
         if (parsed.teachers) setTeachers(parsed.teachers);
         if (parsed.config) setConfig({ ...initialConfig, ...parsed.config });
-        if (parsed.timetable) setTimetable(parsed.timetable);
-        if (parsed.unassigned) setUnassigned(parsed.unassigned);
+        if (parsed.weeklyTimetables) {
+          setWeeklyTimetables(parsed.weeklyTimetables);
+        } else if (parsed.timetable) {
+          setWeeklyTimetables({ 1: { timetable: parsed.timetable, unassigned: parsed.unassigned || [] } });
+        }
+        if (parsed.currentWeek) setCurrentWeek(parsed.currentWeek);
         setSyncStatus('synced');
       }
     } catch (e) {
@@ -142,7 +156,7 @@ export default function App() {
   }, [session, loadData]);
 
   const handleSave = async () => {
-    const dataToSave = { classes, subjects, teachers, config, timetable, unassigned };
+    const dataToSave = { classes, subjects, teachers, config, weeklyTimetables, currentWeek };
     
     // Save to localStorage as backup
     localStorage.setItem('timetableData', JSON.stringify(dataToSave));
@@ -175,8 +189,10 @@ export default function App() {
 
   const handleGenerate = () => {
     const { slots, unassigned } = generateTimetable(classes, subjects, teachers, config);
-    setTimetable(slots);
-    setUnassigned(unassigned);
+    setWeeklyTimetables(prev => ({
+      ...prev,
+      [currentWeek]: { timetable: slots, unassigned }
+    }));
     setActiveTab('result');
   };
 
@@ -186,8 +202,8 @@ export default function App() {
       setSubjects(initialSubjects);
       setTeachers(initialTeachers);
       setConfig(initialConfig);
-      setTimetable([]);
-      setUnassigned([]);
+      setWeeklyTimetables({});
+      setCurrentWeek(1);
       localStorage.removeItem('timetableData');
       
       if (!supabase || !session) {
@@ -288,6 +304,18 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 no-print">
+              <span className="text-xs font-bold text-slate-500 pl-3">Tuần</span>
+              <select 
+                value={currentWeek}
+                onChange={(e) => setCurrentWeek(parseInt(e.target.value))}
+                className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-brand-700 outline-none"
+              >
+                {Array.from({ length: 52 }).map((_, i) => (
+                  <option key={i+1} value={i+1}>Tuần {i+1}</option>
+                ))}
+              </select>
+            </div>
             <button onClick={handleSave} className="btn-secondary flex items-center gap-2 py-3 px-6">
               <Save className="w-6 h-6" />
               <span className="hidden sm:inline">Lưu & Đồng bộ</span>
@@ -367,8 +395,8 @@ export default function App() {
               />
             ) : activeTab === 'result' ? (
               <ResultTab 
-                timetable={timetable} 
-                unassigned={unassigned} 
+                timetable={weeklyTimetables[currentWeek]?.timetable || []} 
+                unassigned={weeklyTimetables[currentWeek]?.unassigned || []} 
                 classes={classes} 
                 subjects={subjects} 
                 teachers={teachers} 
