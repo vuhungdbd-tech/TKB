@@ -172,13 +172,17 @@ function SubjectConfig({ subjects, setSubjects }: { subjects: Subject[], setSubj
                     />
                   </td>
                   <td>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      value={sub.lessonsPerWeek || 0} 
-                      onChange={(e) => updateSubject(idx, 'lessonsPerWeek', parseInt(e.target.value) || 1)} 
-                      className="w-16 bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center font-mono" 
-                    />
+                    {sub.type === 'integrated' || sub.type === 'sub' ? (
+                      <span className="text-xs text-slate-400 font-medium whitespace-nowrap">Theo lớp</span>
+                    ) : (
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={sub.lessonsPerWeek || 0} 
+                        onChange={(e) => updateSubject(idx, 'lessonsPerWeek', parseInt(e.target.value) || 1)} 
+                        className="w-16 bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center font-mono" 
+                      />
+                    )}
                   </td>
                   <td>
                     <select 
@@ -255,7 +259,7 @@ function SubjectConfig({ subjects, setSubjects }: { subjects: Subject[], setSubj
                                 <input 
                                   type="number"
                                   min="0"
-                                  placeholder={sub.lessonsPerWeek.toString()}
+                                  placeholder={sub.type === 'integrated' || sub.type === 'sub' ? '0' : sub.lessonsPerWeek.toString()}
                                   value={sub.gradeConfigs?.[grade]?.term1 ?? ''}
                                   onChange={(e) => updateGradeConfig(idx, grade, 'term1', e.target.value)}
                                   className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm"
@@ -266,7 +270,7 @@ function SubjectConfig({ subjects, setSubjects }: { subjects: Subject[], setSubj
                                 <input 
                                   type="number"
                                   min="0"
-                                  placeholder={sub.lessonsPerWeek.toString()}
+                                  placeholder={sub.type === 'integrated' || sub.type === 'sub' ? '0' : sub.lessonsPerWeek.toString()}
                                   value={sub.gradeConfigs?.[grade]?.term2 ?? ''}
                                   onChange={(e) => updateGradeConfig(idx, grade, 'term2', e.target.value)}
                                   className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm"
